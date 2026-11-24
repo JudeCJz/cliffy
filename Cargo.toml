@@ -1,0 +1,65 @@
+[package]
+name = "cliffy"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Cliffy - GPU zero-copy game clipper for Windows (replay buffer, hardware encode)"
+license = "MIT"
+
+[dependencies]
+# Capture (Windows Graphics Capture + DXGI Desktop Duplication fallback)
+windows-capture = "2.0.1"
+
+# Win32 / Media Foundation / D3D11 / WASAPI bindings.
+# Must stay on the same windows-rs version as windows-capture (0.62.x).
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D10",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# Config
+# Window/tray icon (PNG from assets/icon.png)
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# UI
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts"] }
+egui = "0.37"
+
+# MP4 muxing of already-encoded packets (no re-encode on save)
+mp4 = "0.14"
+bytes = "1"
+
+thiserror = "2"
+
+# Vendored so the capture D3D11 device is created with VIDEO_SUPPORT, which the
+# Media Foundation hardware encoder MFTs require for a DXGI device manager.
+[patch.crates-io]
+windows-capture = { path = "vendor/windows-capture" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

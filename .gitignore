@@ -1,0 +1,6 @@
+/target/
+/testclips/
+*.log
+*.mp4
+*.wav
+/docs/settings-page.png

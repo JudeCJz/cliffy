@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="690" viewBox="0 0 820 690">
+  <rect width="820" height="690" fill="#050505"/>
+  <rect x="110" y="34" width="600" height="622" rx="10" fill="#0a0a0a" stroke="#1e1e1e"/>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#f5f5f5">
+    <rect x="132" y="58" width="270" height="46" rx="6" fill="#121212" stroke="#1e1e1e"/>
+    <circle cx="158" cy="81" r="7" fill="none" stroke="#f5f5f5" stroke-width="2"/>
+    <text x="178" y="87">Start Recording</text>
+    <rect x="410" y="58" width="278" height="46" rx="6" fill="#ef4444"/>
+    <path d="M436 72v18m8-18v18" stroke="#fff" stroke-width="3"/>
+    <text x="456" y="87">Buffer Ready 00:20</text>
+    <path d="M132 126H688" stroke="#1e1e1e"/>
+
+    <g fill="#a3a3a3" font-size="16">
+      <text x="132" y="166">Resolution</text>
+      <text x="132" y="210">Clip Length</text>
+      <text x="132" y="254">Delayed Stop</text>
+      <text x="132" y="298">Frame Rate</text>
+      <text x="132" y="362">Start with Windows</text>
+      <text x="132" y="406">Start with Windows (AC only)</text>
+      <text x="132" y="450">Start clipping on launch</text>
+    </g>
+
+    <g font-size="15">
+      <rect x="560" y="142" width="128" height="32" rx="6" fill="#121212" stroke="#1e1e1e"/>
+      <text x="578" y="163">1080p</text><path d="m668 155 6 7 6-7" fill="none" stroke="#666" stroke-width="2"/>
+      <rect x="600" y="186" width="88" height="32" rx="6" fill="#121212" stroke="#1e1e1e"/>
+      <text x="612" y="207">20 s</text>
+      <rect x="600" y="230" width="88" height="32" rx="6" fill="#121212" stroke="#1e1e1e"/>
+      <text x="612" y="251">2 s</text>
+      <rect x="600" y="274" width="88" height="32" rx="6" fill="#121212" stroke="#1e1e1e"/>
+      <text x="612" y="295">30 fps</text>
+    </g>
+
+    <g>
+      <rect x="654" y="346" width="34" height="18" rx="9" fill="#121212" stroke="#2e2e2e"/>
+      <circle cx="663" cy="355" r="6" fill="#666"/>
+      <rect x="654" y="390" width="34" height="18" rx="9" fill="#121212" stroke="#2e2e2e"/>
+      <circle cx="663" cy="399" r="6" fill="#666"/>
+      <rect x="654" y="434" width="34" height="18" rx="9" fill="#121212" stroke="#2e2e2e"/>
+      <circle cx="663" cy="443" r="6" fill="#666"/>
+    </g>
+
+    <path d="M132 480H688" stroke="#1e1e1e"/>
+    <rect x="132" y="500" width="556" height="42" rx="6" fill="#121212" stroke="#1e1e1e"/>
+    <path d="M151 513v16m-5-5 5 5 5-5" fill="none" stroke="#f5f5f5" stroke-width="2"/>
+    <text x="170" y="527">Open Folder</text>
+    <path d="M132 572H688" stroke="#1e1e1e"/>
+    <rect x="534" y="590" width="154" height="40" rx="6" fill="#ef4444"/>
+    <path d="m552 610 5 5 9-11" fill="none" stroke="#fff" stroke-width="2"/>
+    <text x="574" y="616">Apply Changes</text>
+  </g>
+</svg>
