@@ -9,3 +9,4 @@
 - Added unique replay filenames with an `_extraNsec` suffix.
 - Kept settings in memory and removed config-file editing from the UI.
 - Verified with `cargo check --offline`, `cargo test --offline`, and a release build.
+- Added NVIDIA NVENC selection with Intel Quick Sync fallback on supported GPUs.

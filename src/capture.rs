@@ -14,8 +14,8 @@ use windows_capture::frame::Frame;
 use windows_capture::graphics_capture_api::InternalCaptureControl;
 use windows_capture::monitor::Monitor;
 use windows_capture::settings::{
-    ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
-    MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
+    ColorFormat, CursorCaptureSettings, D3DAdapterPreference, DirtyRegionSettings,
+    DrawBorderSettings, MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
 };
 use windows_capture::window::Window;
 
@@ -42,6 +42,8 @@ pub enum EncMsg {
     Config(CodecInfo),
     Packets(Vec<Packet>),
     Encoder(String),
+    /// A hardware encoder could not initialize on the selected GPU adapter.
+    EncoderUnavailable(String),
     Error(String),
     /// Frames captured but not encoded, for the dropped-frame readout.
     Dropped(u64),
@@ -244,7 +246,8 @@ impl CaptureHandler {
         let encoder = match MfEncoder::new(device, &video) {
             Ok(e) => e,
             Err(e) => {
-                self.report_error(e.clone());
+                self.encoder_error = Some(e.clone());
+                let _ = self.tx.try_send(EncMsg::EncoderUnavailable(e.clone()));
                 return Err(e.into());
             }
         };
@@ -285,6 +288,7 @@ impl CaptureHandler {
 pub fn make_settings(
     cfg: &Config,
     tx: SyncSender<EncMsg>,
+    adapter_preference: D3DAdapterPreference,
 ) -> Result<Settings<Flags, Item>, String> {
     let cursor = if cfg.capture_cursor {
         CursorCaptureSettings::WithCursor
@@ -305,7 +309,8 @@ pub fn make_settings(
         DirtyRegionSettings::Default,
         ColorFormat::Bgra8,
         flags,
-    ))
+    )
+    .with_d3d_adapter_preference(adapter_preference))
 }
 
 /// The capture item can be a monitor or a window; keep them in one type that

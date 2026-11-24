@@ -97,6 +97,12 @@ pub struct MfEncoder {
     last_submit: Instant,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HardwareEncoder {
+    Nvenc,
+    QuickSync,
+}
+
 impl MfEncoder {
     pub fn new(device: &ID3D11Device, settings: &VideoSettings) -> Result<Self, String> {
         if settings.codec != Codec::H264 {
@@ -104,8 +110,8 @@ impl MfEncoder {
         }
 
         // One device manager per encoder instance; it must wrap the same D3D11
-        // device the capture frames live on. On Optimus that is the Intel GPU,
-        // so the matching hardware encoder is Intel Quick Sync.
+        // device the capture frames live on. Prefer an encoder on that adapter
+        // so frames stay on one GPU without a cross-adapter copy.
         let mut token = 0u32;
         let mut manager: Option<IMFDXGIDeviceManager> = None;
         unsafe { MFCreateDXGIDeviceManager(&mut token, &mut manager) }
@@ -113,38 +119,62 @@ impl MfEncoder {
         let manager = manager.ok_or("device manager null")?;
         unsafe { manager.ResetDevice(device, token) }.map_err(|e| format!("ResetDevice: {e}"))?;
 
-        // H.264 only, hardware only, Quick Sync only for v1. NVENC lives on a
-        // different adapter on this laptop and would require a cross-GPU copy.
-        let candidates: Vec<IMFActivate> = enum_encoders()
+        let device_name = device_description(device);
+        let capture_luid = device_luid(device);
+        let preferred = preferred_encoder(&device_name);
+        let mut candidates: Vec<(u8, IMFActivate, String)> = enum_encoders()
             .into_iter()
-            .filter(|a| friendly_name(a).to_ascii_lowercase().contains("quick sync"))
+            .filter_map(|activate| {
+                let name = friendly_name(&activate);
+                let vendor = hardware_encoder(&name)?;
+                let mft_luid = encoder_luid(&activate);
+                if let (Some(capture), Some(mft)) = (capture_luid, mft_luid) {
+                    if !same_luid(capture, mft) {
+                        debug_log!(
+                            "skip encoder {name}: adapter {:?} does not match capture adapter {:?}",
+                            mft_luid,
+                            capture_luid
+                        );
+                        return None;
+                    }
+                }
+                let affinity = if capture_luid.is_some() && mft_luid.is_some() {
+                    0
+                } else {
+                    2
+                };
+                let vendor_rank = u8::from(vendor != preferred);
+                Some((affinity + vendor_rank, activate, name))
+            })
             .collect();
+        candidates.sort_by_key(|(rank, _, _)| *rank);
+
         if candidates.is_empty() {
-            return Err(
-                "No Intel Quick Sync Video H.264 encoder found. Cliffy v1 requires a hardware Quick Sync encoder on the same GPU as Windows Graphics Capture; NVENC, AMF and software encoding are not used."
-                    .into(),
-            );
+            return Err(format!(
+                "No NVIDIA NVENC or Intel Quick Sync H.264 encoder matches the capture GPU ({device_name})"
+            ));
         }
 
-        let mut last_err = String::new();
-        for activate in candidates.iter() {
-            let name = friendly_name(activate);
+        let mut errors = Vec::new();
+        for (_, activate, name) in candidates {
             match Self::try_init(
-                activate,
+                &activate,
                 device,
                 &manager,
                 settings,
                 MFVideoFormat_H264,
                 name.clone(),
             ) {
-                Ok(enc) => return Ok(enc),
-                Err(e) => {
-                    last_err = format!("{name}: {e}");
+                Ok(enc) => {
+                    debug_log!("selected hardware encoder {name} on capture adapter {device_name}");
+                    return Ok(enc);
                 }
+                Err(e) => errors.push(format!("{name}: {e}")),
             }
         }
         Err(format!(
-            "Quick Sync encoder initialisation failed. Last error: {last_err}"
+            "No NVIDIA NVENC or Intel Quick Sync H.264 encoder could initialize on {device_name}. Attempts: {}",
+            errors.join("; ")
         ))
     }
 
@@ -414,15 +444,21 @@ impl MfEncoder {
             if self.need_input && self.inflight_inputs < 2 {
                 self.submit_input(texture, slot, pts_us)?;
             } else {
-                return Err("encoder busy".into());
+                // Output may have completed during the first drain even when
+                // the MFT has not yet issued its next NeedInput event. Return
+                // those packets and released texture slots to capture. This
+                // frame was not submitted, so its converted texture must also
+                // go back to the pool.
+                self.released_slots.push(slot);
+                debug_log!(
+                    "encoder not ready for input; returning drained output need_input={} inflight_inputs={}",
+                    self.need_input,
+                    self.inflight_inputs
+                );
             }
 
             self.pump_events();
             self.drain_output(&mut packets);
-
-            if !packets.is_empty() {
-                self.need_input = true;
-            }
         } else {
             // Synchronous path: drain stale output, then submit.
             self.drain_output(&mut packets);
@@ -843,6 +879,31 @@ fn new_output_sample(buffer_bytes: u32) -> Result<IMFSample, String> {
     }
 }
 
+fn hardware_encoder(name: &str) -> Option<HardwareEncoder> {
+    let name = name.to_ascii_lowercase();
+    if name.contains("quick sync") || name.contains("intel") {
+        Some(HardwareEncoder::QuickSync)
+    } else if name.contains("nvenc") || name.contains("nvidia") {
+        Some(HardwareEncoder::Nvenc)
+    } else {
+        None
+    }
+}
+
+fn preferred_encoder(adapter_name: &str) -> HardwareEncoder {
+    let adapter_name = adapter_name.to_ascii_lowercase();
+    if adapter_name.contains("intel") {
+        HardwareEncoder::QuickSync
+    } else {
+        // NVENC is the preferred encoder on NVIDIA and unknown adapters.
+        HardwareEncoder::Nvenc
+    }
+}
+
+fn same_luid(a: LUID, b: LUID) -> bool {
+    a.LowPart == b.LowPart && a.HighPart == b.HighPart
+}
+
 fn enum_encoders() -> Vec<IMFActivate> {
     unsafe {
         let input_info = MFT_REGISTER_TYPE_INFO {
@@ -881,6 +942,36 @@ fn enum_encoders() -> Vec<IMFActivate> {
             CoTaskMemFree(Some(activates as *const core::ffi::c_void));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hardware_encoder, preferred_encoder, HardwareEncoder};
+
+    #[test]
+    fn selects_encoder_for_capture_gpu() {
+        assert_eq!(
+            preferred_encoder("Intel(R) UHD Graphics"),
+            HardwareEncoder::QuickSync
+        );
+        assert_eq!(
+            preferred_encoder("NVIDIA GeForce RTX"),
+            HardwareEncoder::Nvenc
+        );
+    }
+
+    #[test]
+    fn recognizes_supported_hardware_encoder_names() {
+        assert_eq!(
+            hardware_encoder("Intel Quick Sync Video H.264 Encoder"),
+            Some(HardwareEncoder::QuickSync)
+        );
+        assert_eq!(
+            hardware_encoder("NVIDIA H.264 Encoder"),
+            Some(HardwareEncoder::Nvenc)
+        );
+        assert_eq!(hardware_encoder("Microsoft Software Encoder"), None);
     }
 }
 

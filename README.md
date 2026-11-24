@@ -23,7 +23,7 @@ Left-click the tray icon or press **Alt+Shift+S** to open the settings. Closing 
 
 ## Requirements
 
-Cliffy runs on Windows and currently needs an Intel GPU with Quick Sync H.264 encoding. It does not use NVIDIA NVENC. Windows Graphics Capture and Media Foundation must also be available.
+Cliffy runs on Windows and needs either an NVIDIA GPU with NVENC or an Intel GPU with Quick Sync H.264 encoding. When both are available, it tries NVIDIA first. If that encoder cannot start, Cliffy restarts capture on Intel Quick Sync. It keeps capture and encoding on the same GPU to avoid copying every frame between adapters. Windows Graphics Capture and Media Foundation must also be available.
 
 ## Build
 

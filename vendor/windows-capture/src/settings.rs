@@ -34,6 +34,17 @@ pub enum ColorFormat {
     Bgra8 = 87,
 }
 
+/// Chooses which graphics adapter creates the capture D3D11 device.
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub enum D3DAdapterPreference {
+    /// Try NVIDIA first, then Intel, then the system default adapter.
+    BestAvailable,
+    /// Require an NVIDIA adapter.
+    Nvidia,
+    /// Require an Intel adapter.
+    Intel,
+}
+
 impl Default for ColorFormat {
     /// The default color format is [`ColorFormat::Rgba8`].
     #[inline]
@@ -122,6 +133,8 @@ pub struct Settings<Flags, T: TryInto<GraphicsCaptureItemType>> {
     pub(crate) dirty_region_settings: DirtyRegionSettings,
     /// The pixel format for the captured frames.
     pub(crate) color_format: ColorFormat,
+    /// The vendor preference for the D3D11 capture device.
+    pub(crate) d3d_adapter_preference: D3DAdapterPreference,
     /// User-defined flags that can be passed to the capture implementation.
     pub(crate) flags: Flags,
 }
@@ -149,8 +162,17 @@ impl<Flags, T: TryInto<GraphicsCaptureItemType>> Settings<Flags, T> {
             minimum_update_interval_settings,
             dirty_region_settings,
             color_format,
+            d3d_adapter_preference: D3DAdapterPreference::Intel,
             flags,
         }
+    }
+
+    /// Set which graphics adapter creates the capture device.
+    #[inline]
+    #[must_use]
+    pub const fn with_d3d_adapter_preference(mut self, preference: D3DAdapterPreference) -> Self {
+        self.d3d_adapter_preference = preference;
+        self
     }
 
     /// Returns a reference to the capture item.

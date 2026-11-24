@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::Result as WindowsResult;
 use windows_future::AsyncActionCompletedHandler;
 
-use crate::d3d11::{self, create_d3d_device};
+use crate::d3d11;
 use crate::frame::Frame;
 use crate::graphics_capture_api::{self, GraphicsCaptureApi, InternalCaptureControl};
 use crate::settings::{GraphicsCaptureItemType, Settings};
@@ -306,7 +306,8 @@ pub trait GraphicsCaptureApiHandler: Sized {
         let thread_id = unsafe { GetCurrentThreadId() };
 
         // Create Direct3D device and context
-        let (d3d_device, d3d_device_context) = create_d3d_device()?;
+        let (d3d_device, d3d_device_context) =
+            d3d11::create_d3d_device_with_preference(settings.d3d_adapter_preference)?;
 
         // Start capture
         let result = Arc::new(Mutex::new(None));
@@ -388,7 +389,8 @@ pub trait GraphicsCaptureApiHandler: Sized {
             let thread_id = unsafe { GetCurrentThreadId() };
 
             // Create direct3d device and context
-            let (d3d_device, d3d_device_context) = create_d3d_device()?;
+            let (d3d_device, d3d_device_context) =
+                d3d11::create_d3d_device_with_preference(settings.d3d_adapter_preference)?;
 
             // Start capture
             let result = Arc::new(Mutex::new(None));

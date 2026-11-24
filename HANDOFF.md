@@ -2,8 +2,8 @@
 
 Date: 2026-11-24
 Project: `D:\VS\PROJECTS\FREE WORK\Cliffy`
-Purpose: Windows-native desktop/game clipper in Rust using Windows Graphics Capture, D3D11 GPU conversion, Intel Quick Sync H.264 encode, an encoded-packet replay ring, and a simplified eframe/egui window based on `D:\Downloads\base ui.html`.
-State: v1 completed with hardware Quick Sync zero-copy pipeline, simplified in-session settings UI, system tray, minimize-to-tray, autostart with Windows, power-aware buffering on AC/battery, crisp pixelated toast with live REC timer, and sub-30 MB idle RAM footprint. No config file is used. Defaults are 1080p, 30 FPS, 20 seconds pre-roll plus 2 seconds delayed post-roll, `D:\Videos\Cliffy`, and clip sound on. Launching starts Cliffy in the system tray.
+Purpose: Windows-native desktop/game clipper in Rust using Windows Graphics Capture, D3D11 GPU conversion, NVIDIA NVENC or Intel Quick Sync H.264 encode, an encoded-packet replay ring, and a simplified eframe/egui window based on `D:\Downloads\base ui.html`.
+State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, simplified in-session settings UI, system tray, minimize-to-tray, autostart with Windows, power-aware buffering on AC/battery, crisp pixelated toast with live REC timer, and sub-30 MB idle RAM footprint. NVIDIA is preferred when available; Intel Quick Sync is the fallback. No config file is used. Defaults are 1080p, 30 FPS, 20 seconds pre-roll plus 2 seconds delayed post-roll, `D:\Videos\Cliffy`, and clip sound on. Launching starts Cliffy in the system tray.
 
 ---
 
@@ -13,7 +13,7 @@ State: v1 completed with hardware Quick Sync zero-copy pipeline, simplified in-s
 - **Windows Graphics Capture (WGC)** through vendored `windows-capture` (`[patch.crates-io]` points to `vendor/windows-capture`). The vendored copy creates the capture D3D11 device with video support (`D3D11_CREATE_DEVICE_VIDEO_SUPPORT`), which Media Foundation hardware MFTs require.
 - **D3D11 GPU conversion**: BGRA capture textures convert directly to NV12 encoder textures on the GPU via custom vertex and pixel shaders. Zero CPU readback of video frames.
   - *Fix for Green Video*: Disabled backface culling (`D3D11_CULL_NONE`) and corrected vertex winding to a full-screen quad so UV chrominance planes are actively written, eliminating solid green frames.
-- **Media Foundation hardware H.264 MFT**: Restricted to Intel Quick Sync, sharing the exact same D3D11 device as Windows Graphics Capture for zero copy overhead.
+- **Media Foundation hardware H.264 MFT**: Prefers NVIDIA NVENC, then falls back to Intel Quick Sync. The capture adapter and encoder share the same D3D11 device for zero-copy frames; the capture session restarts on Intel if NVENC cannot initialize.
 - **System Tray Integration (`src/tray.rs`)**:
   - Dedicated Win32 message loop on a background thread.
   - Custom embedded PNG icon from `assets/icon.png`.
@@ -59,7 +59,7 @@ State: v1 completed with hardware Quick Sync zero-copy pipeline, simplified in-s
 | `src/main.rs` | Entry point, CLI (`--autostart`, `--selftest`, `--out`, `--help`), power check on autostart, STA COM init, Media Foundation startup/shutdown, engine/hotkey/toast/tray startup, launch of the simplified eframe/egui window. |
 | `src/capture.rs` | Windows Graphics Capture handler, cursor capture toggle, source resolution, frame pacing, GPU/encoder rebuild on size change, error retry, packet/config messages. |
 | `src/config.rs` | Runtime defaults, sanitization, presets, hotkeys, size estimates, `REPLAY_RAM_CAP_BYTES`, autostart registry management, `GetSystemPowerStatus` bindings. |
-| `src/encoder.rs` | Quick Sync hardware MFT discovery/init, async event pumping, D3D11 surface samples, output packet extraction, SPS/PPS recovery, codec API setup. |
+| `src/encoder.rs` | NVIDIA NVENC and Intel Quick Sync hardware MFT discovery/init, adapter matching, async event pumping, D3D11 surface samples, output packet extraction, SPS/PPS recovery, codec API setup. |
 | `src/engine.rs` | Engine thread, bounded packet channel, ring ownership, recording, replay saves, power monitoring, stats, clip scan, `Command` handling, `UpdateConfig`, selftest driver. |
 | `src/gpu.rs` | Runtime HLSL, BGRA -> NV12 shader passes with `D3D11_CULL_NONE` quad, three-texture NV12 pool, plane-sliced RTVs, texture release after encode output. |
 | `src/hotkeys.rs` | `RegisterHotKey` thread and default shortcuts (Alt+R Save, F10 Record, F11 Buffer, Alt+Shift+S Show Settings). |
@@ -74,10 +74,10 @@ State: v1 completed with hardware Quick Sync zero-copy pipeline, simplified in-s
 
 ## 3. Verified Tests
 
-1. **Compilation**:
-   `cargo check --offline` and `cargo build --release` both succeed cleanly.
-2. **Headless Selftest & Hardware Quick Sync**:
-   `cliffy.exe --selftest 8 --out ...` outputs `SELFTEST_OK`. Frame extraction via ffmpeg and Pillow inspection verifies `1920x1080` H.264 with >45,000 unique colors (solid green screen bug completely eliminated).
+1. **Build and unit tests**:
+   `cargo test --offline` passes all four tests. `cargo build --offline` and the release build succeed; existing dead-code warnings remain.
+2. **Hardware encoder capture**:
+   Ran the 8-second headless capture selftest on this PC once with NVIDIA-first selection and once with Intel Quick Sync selected. Both returned `SELFTEST_OK` and saved an MP4. The NVIDIA clip was about 5.6 MB; the Intel clip was about 4.2 MB. Logs confirmed the selected adapters were the RTX 3050 Laptop GPU and Intel Iris Xe Graphics. These runs also verified capture continues past the three-texture pool without exhausting it.
 3. **RAM Footprint**:
    Working set reduced from 300+ MB to ~29 MB under idle/buffering.
 4. **Power Detection**:

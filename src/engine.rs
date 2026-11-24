@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
 };
 use windows_capture::capture::GraphicsCaptureApiHandler;
+use windows_capture::settings::D3DAdapterPreference;
 
 use crate::capture::{self, CaptureHandler, EncMsg};
 use crate::config::Config;
@@ -191,6 +192,9 @@ struct Engine {
     last_clips_scan: Instant,
     proc_sample: Option<(Instant, u64)>,
     restart_at: Option<Instant>,
+    adapter_preference: D3DAdapterPreference,
+    adapter_fallback_attempted: bool,
+    resume_recording_after_fallback: bool,
     audio_capture: Arc<crate::audio::WasapiCapture>,
 }
 
@@ -230,6 +234,9 @@ impl Engine {
             last_clips_scan: Instant::now() - Duration::from_secs(10),
             proc_sample: None,
             restart_at: None,
+            adapter_preference: D3DAdapterPreference::BestAvailable,
+            adapter_fallback_attempted: false,
+            resume_recording_after_fallback: false,
             audio_capture,
         }
     }
@@ -326,7 +333,7 @@ impl Engine {
             return Ok(());
         }
         let (tx, rx) = mpsc::sync_channel::<EncMsg>(240);
-        let settings = capture::make_settings(&self.cfg, tx)?;
+        let settings = capture::make_settings(&self.cfg, tx, self.adapter_preference)?;
         let control = CaptureHandler::start_free_threaded(settings)
             .map_err(|e| format!("Could not start capture: {e}"))?;
         self.control = Some(control);
@@ -438,6 +445,7 @@ impl Engine {
                 self.encoder_name = name.clone();
                 self.shared.set_message(format!("Encoder: {name}"));
             }
+            EncMsg::EncoderUnavailable(error) => self.fallback_encoder_adapter(error),
             EncMsg::Packets(packets) => {
                 for incoming in packets {
                     if let Some(mut pending) = self.pending_packet.take() {
@@ -462,6 +470,39 @@ impl Engine {
             }
             EncMsg::Dropped(n) => self.dropped_frames = self.dropped_frames.saturating_add(n),
         }
+    }
+
+    fn fallback_encoder_adapter(&mut self, error: String) {
+        if self.adapter_preference != D3DAdapterPreference::BestAvailable
+            || self.adapter_fallback_attempted
+        {
+            self.shared.set_error(error);
+            return;
+        }
+
+        self.adapter_fallback_attempted = true;
+        self.adapter_preference = D3DAdapterPreference::Intel;
+        self.shared
+            .set_message("NVIDIA encoder unavailable; trying Intel Quick Sync");
+
+        self.resume_recording_after_fallback = self.recording;
+        if self.recording {
+            self.stop_recording(false);
+        }
+        if !self.pending_replays.is_empty() {
+            self.pending_replays.clear();
+            self.shared
+                .set_error("Pending delayed clips were cancelled while switching encoders");
+        }
+        if let Some(control) = self.control.take() {
+            let _ = control.stop();
+        }
+        self.enc_rx = None;
+        self.info = None;
+        self.pending_packet = None;
+        self.ring.clear();
+        self.restart_at = Some(Instant::now() + Duration::from_millis(500));
+        self.publish();
     }
 
     fn nominal_dur_us(&self) -> u32 {
@@ -784,7 +825,9 @@ impl Engine {
         if let Some(when) = self.restart_at {
             if Instant::now() >= when {
                 self.restart_at = None;
-                if self.control.is_none() && (self.recording || self.buffering) {
+                if self.control.is_none()
+                    && (self.recording || self.buffering || self.resume_recording_after_fallback)
+                {
                     let result = if self.buffering {
                         self.start_session()
                     } else {
@@ -792,7 +835,11 @@ impl Engine {
                         self.ensure_capture()
                     };
                     if let Err(e) = result {
+                        self.resume_recording_after_fallback = false;
                         self.shared.set_error(e);
+                    } else if self.resume_recording_after_fallback {
+                        self.resume_recording_after_fallback = false;
+                        self.start_recording();
                     }
                 }
             }

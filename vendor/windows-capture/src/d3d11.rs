@@ -8,10 +8,9 @@ use windows::Win32::Graphics::Direct3D::{
     D3D_FEATURE_LEVEL_11_1,
 };
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CPU_ACCESS_READ, D3D11_CPU_ACCESS_WRITE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_MAP_READ_WRITE,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11CreateDevice,
-    ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+    D3D11_CPU_ACCESS_READ, D3D11_CPU_ACCESS_WRITE, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+    D3D11_MAP_READ_WRITE, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+    D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC};
 use windows::Win32::Graphics::Dxgi::{
@@ -20,12 +19,17 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice;
 use windows::core::Interface;
 
+use crate::settings::D3DAdapterPreference;
+
 #[derive(thiserror::Error, Eq, PartialEq, Clone, Debug)]
 /// Errors that can occur when creating or working with Direct3D devices and textures.
 pub enum Error {
     /// The created device does not support at least feature level 11.0.
     #[error("Failed to create DirectX device with the recommended feature levels")]
     FeatureLevelNotSatisfied,
+    /// The requested GPU vendor is not available.
+    #[error("No {0} graphics adapter was found")]
+    AdapterNotFound(&'static str),
     /// A Win32 API reported success but did not populate the requested output value.
     #[error("Windows API succeeded but did not return {0}")]
     UnexpectedNullResult(&'static str),
@@ -165,6 +169,13 @@ pub(crate) fn unmap_staging_texture(context: &ID3D11DeviceContext, texture: &mut
 ///   level 11.0
 #[inline]
 pub fn create_d3d_device() -> Result<(ID3D11Device, ID3D11DeviceContext), Error> {
+    create_d3d_device_with_preference(D3DAdapterPreference::Intel)
+}
+
+/// Create a capture device on the requested GPU vendor.
+pub fn create_d3d_device_with_preference(
+    preference: D3DAdapterPreference,
+) -> Result<(ID3D11Device, ID3D11DeviceContext), Error> {
     // Array of Direct3D feature levels.
     // The feature levels are listed in descending order of capability.
     // The highest feature level supported by the system is at index 0.
@@ -179,13 +190,26 @@ pub fn create_d3d_device() -> Result<(ID3D11Device, ID3D11DeviceContext), Error>
         D3D_FEATURE_LEVEL_9_1,
     ];
 
-    if let Some(adapter) = find_intel_adapter().ok().flatten() {
-        if let Ok(device) = create_with_adapter(Some(&adapter), &feature_flags) {
-            return Ok(device);
+    match preference {
+        D3DAdapterPreference::Nvidia => {
+            let adapter = find_adapter(0x10de)?.ok_or(Error::AdapterNotFound("NVIDIA"))?;
+            create_with_adapter(Some(&adapter), &feature_flags)
+        }
+        D3DAdapterPreference::Intel => {
+            let adapter = find_intel_adapter()?.ok_or(Error::AdapterNotFound("Intel"))?;
+            create_with_adapter(Some(&adapter), &feature_flags)
+        }
+        D3DAdapterPreference::BestAvailable => {
+            for vendor_id in [0x10de, 0x8086] {
+                if let Some(adapter) = find_adapter(vendor_id).ok().flatten() {
+                    if let Ok(device) = create_with_adapter(Some(&adapter), &feature_flags) {
+                        return Ok(device);
+                    }
+                }
+            }
+            create_with_adapter(None, &feature_flags)
         }
     }
-
-    create_with_adapter(None, &feature_flags)
 }
 
 fn create_with_adapter(
@@ -220,6 +244,10 @@ fn create_with_adapter(
 }
 
 fn find_intel_adapter() -> Result<Option<IDXGIAdapter>, windows::core::Error> {
+    find_adapter(0x8086)
+}
+
+fn find_adapter(vendor_id: u32) -> Result<Option<IDXGIAdapter>, windows::core::Error> {
     let factory = unsafe { CreateDXGIFactory1::<IDXGIFactory1>()? };
 
     for index in 0.. {
@@ -231,7 +259,7 @@ fn find_intel_adapter() -> Result<Option<IDXGIAdapter>, windows::core::Error> {
         let desc = unsafe { adapter.GetDesc()? };
         let len = desc.Description.iter().position(|&unit| unit == 0).unwrap_or(desc.Description.len());
         let description = String::from_utf16_lossy(&desc.Description[..len]);
-        if desc.VendorId == 0x8086 || description.to_lowercase().contains("intel") {
+        if desc.VendorId == vendor_id || (vendor_id == 0x8086 && description.to_lowercase().contains("intel")) {
             return Ok(Some(adapter));
         }
     }
