@@ -36,7 +36,7 @@ const BADGE_MARGIN: i32 = 24;
 const BADGE_BACKGROUND_ALPHA: u8 = 84;
 const BADGE_BACKGROUND_BGRA: [u8; 3] = [29, 23, 19];
 const BADGE_CORNER_RADIUS: i32 = 10;
-const CLIPPED_BADGE_DURATION: Duration = Duration::from_secs(1);
+const SAVED_BADGE_DURATION: Duration = Duration::from_secs(1);
 // Logo is 64 px in the source asset; show it 1.5 times smaller (about 43 px).
 const BADGE_LOGO_SIZE: u32 = 43;
 
@@ -278,7 +278,7 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
     );
 
     // Rebuild the badge DIB when its label changes: logo on the left and a
-    // REC timer or short CLIPPED confirmation on the right.
+    // REC timer or a short save confirmation on the right.
     let render_badge = |label: &str| {
         let badge_slice = std::slice::from_raw_parts_mut(
             badge_bits as *mut u8,
@@ -363,8 +363,9 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
         }
     };
 
-    let mut last_shared_toast_gen = 0u64;
-    let mut clipped_until: Option<Instant> = None;
+    let mut last_badge_generation = 0u64;
+    let mut saved_until: Option<Instant> = None;
+    let mut badge_status = "CLIPPED";
     let mut badge_was_shown = false;
     let mut last_badge_label: Option<String> = None;
 
@@ -376,13 +377,20 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
             DispatchMessageW(&msg);
         }
 
-        // A saved clip temporarily replaces the REC timer in the same badge.
-        let shared_gen = shared.clip_saved_generation.load(Ordering::Acquire);
-        if shared_gen != last_shared_toast_gen {
-            last_shared_toast_gen = shared_gen;
+        // Clip, recording, and buffering actions temporarily replace the REC
+        // timer in the same badge.
+        let badge_gen = shared.badge_generation.load(Ordering::Acquire);
+        if badge_gen != last_badge_generation {
+            last_badge_generation = badge_gen;
+            badge_status = match shared.badge_kind.load(Ordering::Acquire) {
+                2 => "RECORDED",
+                3 => "BUFFER ON",
+                4 => "BUFFER OFF",
+                _ => "CLIPPED",
+            };
             let sound = shared.toast_sound.swap(false, Ordering::Relaxed);
             if TOAST_ENABLED.load(Ordering::Relaxed) {
-                clipped_until = Some(Instant::now() + CLIPPED_BADGE_DURATION);
+                saved_until = Some(Instant::now() + SAVED_BADGE_DURATION);
                 if sound && SOUND_ENABLED.load(Ordering::Relaxed) {
                     play_switch_sound();
                 }
@@ -390,17 +398,17 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
         }
 
         let now = Instant::now();
-        if clipped_until.is_some_and(|until| until <= now) {
-            clipped_until = None;
+        if saved_until.is_some_and(|until| until <= now) {
+            saved_until = None;
         }
         let (is_rec, record_seconds) = match shared.ui.lock() {
             Ok(ui) => (ui.recording_active, ui.record_seconds),
             Err(_) => (RECORDING_ACTIVE.load(Ordering::Acquire), 0.0),
         };
-        let show_badge = is_rec || clipped_until.is_some();
+        let show_badge = is_rec || saved_until.is_some();
         if show_badge {
-            let label = if clipped_until.is_some() {
-                "CLIPPED".to_owned()
+            let label = if saved_until.is_some() {
+                badge_status.to_owned()
             } else {
                 let seconds = record_seconds.max(0.0) as u64;
                 format!("REC {:02}:{:02}", seconds / 60, seconds % 60)

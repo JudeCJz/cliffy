@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -32,7 +32,8 @@ pub struct AppShared {
     pub show_requested: AtomicBool,
     pub hide_requested: AtomicBool,
     pub quit_requested: AtomicBool,
-    pub clip_saved_generation: AtomicU64,
+    pub badge_generation: AtomicU64,
+    pub badge_kind: AtomicU8,
     pub toast_sound: AtomicBool,
     pub toast_stop: AtomicBool,
 }
@@ -45,7 +46,8 @@ impl AppShared {
             show_requested: AtomicBool::new(false),
             hide_requested: AtomicBool::new(false),
             quit_requested: AtomicBool::new(false),
-            clip_saved_generation: AtomicU64::new(0),
+            badge_generation: AtomicU64::new(0),
+            badge_kind: AtomicU8::new(1),
             toast_sound: AtomicBool::new(false),
             toast_stop: AtomicBool::new(false),
         })
@@ -105,10 +107,25 @@ impl AppShared {
 
     /// Ask the badge overlay to briefly confirm a saved clip.
     pub fn request_clip_saved_badge(&self) {
-        // A successful clip save should use the configured clip sound even
-        // when it came from the tray or the on-screen record controls.
-        self.toast_sound.store(true, Ordering::Release);
-        let _ = self.clip_saved_generation.fetch_add(1, Ordering::Release);
+        self.request_badge(1, true);
+    }
+
+    /// Ask the badge overlay to briefly confirm a completed recording.
+    pub fn request_recording_saved_badge(&self) {
+        self.request_badge(2, true);
+    }
+
+    /// Ask the badge overlay to confirm a buffer state change without sound.
+    pub fn request_buffer_badge(&self, enabled: bool) {
+        self.request_badge(if enabled { 3 } else { 4 }, false);
+    }
+
+    fn request_badge(&self, kind: u8, sound: bool) {
+        self.badge_kind.store(kind, Ordering::Release);
+        if sound {
+            self.toast_sound.store(true, Ordering::Release);
+        }
+        let _ = self.badge_generation.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -278,6 +295,7 @@ impl Engine {
                     }
                 }
                 if self.buffering && !was_buffering {
+                    self.shared.request_buffer_badge(true);
                     crate::toast::splash("BUFFER STARTED", sound);
                 }
             }
@@ -286,6 +304,7 @@ impl Engine {
                 let was_buffering = self.buffering;
                 self.stop_session();
                 if was_buffering {
+                    self.shared.request_buffer_badge(false);
                     crate::toast::splash("BUFFER STOPPED", sound);
                 }
             }
@@ -633,7 +652,7 @@ impl Engine {
                                     .set_message(format!("Recording saved: {}", p.display()));
                                 self.shared.ui.lock().unwrap().last_saved = Some(p);
                                 if show {
-                                    self.shared.request_clip_saved_badge();
+                                    self.shared.request_recording_saved_badge();
                                 }
                             }
                             Ok(_) => self.shared.set_error("Recording file is empty"),

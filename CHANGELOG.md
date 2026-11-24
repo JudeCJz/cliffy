@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 - 2026-11-25
+
+- Show `RECORDED` when a manual recording finishes, `CLIPPED` for replay clips, and `BUFFER ON` or `BUFFER OFF` when buffering is toggled.
+
 ## 0.1.2 - 2026-11-25
 
 - Removed popup toast notifications. A saved clip now briefly replaces the top-right badge label with "CLIPPED" for one second, then restores the REC timer if recording continues.

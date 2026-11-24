@@ -40,7 +40,7 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
   - Output paths are trimmed of whitespace and outer quotation marks.
 - **Recording and Clip Badge (`src/toast.rs`)**:
   - A layered Win32 badge shows the Cliffy logo and live REC timer while recording.
-  - A saved clip replaces the timer with `CLIPPED` for one second; the timer returns if recording continues.
+  - A replay clip shows `CLIPPED`, a completed manual recording shows `RECORDED`, and buffer toggles show `BUFFER ON` or `BUFFER OFF`; each message lasts one second.
   - The background extends behind the logo, has rounded corners, and uses half its previous opacity.
   - Action sounds and the badge message pump run on the overlay thread.
 - **Live settings**: UI edits auto-apply after a short debounce; `Apply Changes` applies them immediately. Settings are session-only; Cliffy does not read or write a config file. Global Alt+Shift+S restores and focuses the settings window; tray left-click toggles its visibility.
@@ -65,7 +65,7 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
 | `src/hotkeys.rs` | `RegisterHotKey` thread and default shortcuts (Alt+R Save, F10 Record, F11 Buffer, Alt+Shift+S Show Settings). |
 | `src/muxer.rs` | MP4 writing of already-encoded H.264 packets, SPS/PPS split, Annex-B/AVCC helpers, finalization. |
 | `src/ring.rs` | Encoded-packet `VecDeque`, GOP-aware trim, RAM cap, keyframe-aligned replay snapshot. |
-| `src/toast.rs` | Layered Win32 recording badge, one-second CLIPPED confirmation, rounded translucent background, and action sound playback. |
+| `src/toast.rs` | Layered Win32 recording badge, one-second CLIPPED, RECORDED, BUFFER ON, or BUFFER OFF status, rounded translucent background, and action sound playback. |
 | `src/tray.rs` | Dedicated Win32 thread, taskbar notification icon, context menu with Alt+R, F10, and F11 shortcuts, and left-click settings toggle. |
 | `src/types.rs` | `Packet`, `CodecInfo`, `VideoSettings`, `ClipInfo`, `UiSnapshot`, `Command`, `SessionState`. |
 | `src/ui.rs` | Compact eframe/egui settings UI: Record/Buffer buttons with buffer-fill timer, Resolution (480p/720p/1080p/Custom), Clip Length, Delayed Stop, and Frame Rate fields, three startup toggles, Open Folder, debounced in-session apply, and an `Apply Changes` button. No scroll bar, config editor, or shortcut labels. |
