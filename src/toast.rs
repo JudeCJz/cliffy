@@ -36,17 +36,23 @@ const SPLASH_WIDTH: u32 = 220;
 const SPLASH_HEIGHT: u32 = 44;
 const SPLASH_STRIDE: usize = SPLASH_WIDTH as usize * 4;
 const SPLASH_DURATION: Duration = Duration::from_millis(2400);
+const SPLASH_LOGO_SIZE: usize = 32;
+const SPLASH_LOGO_X: usize = 12;
+const SPLASH_LOGO_Y: usize = 6;
 
 // Dimensions for the active recording badge
 const BADGE_WIDTH: u32 = 140;
 const BADGE_HEIGHT: u32 = 44;
 const BADGE_STRIDE: usize = BADGE_WIDTH as usize * 4;
 const BADGE_MARGIN: i32 = 24;
+const BADGE_BACKGROUND_ALPHA: u8 = 168;
+const BADGE_BACKGROUND_BGRA: [u8; 3] = [29, 23, 19];
 // Logo is 64 px in the source asset; show it 1.5 times smaller (about 43 px).
 const BADGE_LOGO_SIZE: u32 = 43;
 
 static SPLASH_GENERATION: AtomicU64 = AtomicU64::new(0);
 static SPLASH_MESSAGE: Mutex<String> = Mutex::new(String::new());
+static SPLASH_SHOW_LOGO: AtomicBool = AtomicBool::new(false);
 static RECORDING_ACTIVE: AtomicBool = AtomicBool::new(false);
 static TOAST_ENABLED: AtomicBool = AtomicBool::new(true);
 static SOUND_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -124,6 +130,14 @@ pub fn set_sound_enabled(enabled: bool) {
 
 /// Fire a simple, sleek HUD splash notification (auto-dismisses after 2.4s).
 pub fn splash(message: impl Into<String>, sound: bool) {
+    show_splash(message, sound, false);
+}
+
+fn clipped_splash(sound: bool) {
+    show_splash("CLIPPED", sound, true);
+}
+
+fn show_splash(message: impl Into<String>, sound: bool, show_logo: bool) {
     if !TOAST_ENABLED.load(Ordering::Relaxed) {
         return;
     }
@@ -131,6 +145,7 @@ pub fn splash(message: impl Into<String>, sound: bool) {
     if let Ok(mut lock) = SPLASH_MESSAGE.lock() {
         *lock = msg;
     }
+    SPLASH_SHOW_LOGO.store(show_logo, Ordering::Relaxed);
     SPLASH_GENERATION.fetch_add(1, Ordering::Release);
     if sound && SOUND_ENABLED.load(Ordering::Relaxed) {
         play_switch_sound();
@@ -293,7 +308,7 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
     let blend_badge = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
         BlendFlags: 0,
-        SourceConstantAlpha: 102,
+        SourceConstantAlpha: 255,
         AlphaFormat: AC_SRC_ALPHA as u8,
     };
 
@@ -365,7 +380,15 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
             badge_bits as *mut u8,
             BADGE_STRIDE * BADGE_HEIGHT as usize,
         );
-        badge_slice.fill(0);
+        for pixel in badge_slice.chunks_exact_mut(4) {
+            pixel[0] =
+                ((BADGE_BACKGROUND_BGRA[0] as u16 * BADGE_BACKGROUND_ALPHA as u16) / 255) as u8;
+            pixel[1] =
+                ((BADGE_BACKGROUND_BGRA[1] as u16 * BADGE_BACKGROUND_ALPHA as u16) / 255) as u8;
+            pixel[2] =
+                ((BADGE_BACKGROUND_BGRA[2] as u16 * BADGE_BACKGROUND_ALPHA as u16) / 255) as u8;
+            pixel[3] = BADGE_BACKGROUND_ALPHA;
+        }
 
         let logo_y = (BADGE_HEIGHT - BADGE_LOGO_SIZE) as usize / 2;
         let raw_rgba = badge_img.as_raw();
@@ -481,9 +504,8 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
         let shared_gen = shared.toast_generation.load(Ordering::Acquire);
         if shared_gen != last_shared_toast_gen {
             last_shared_toast_gen = shared_gen;
-            let secs = shared.toast_seconds.load(Ordering::Relaxed);
             let sound = shared.toast_sound.swap(false, Ordering::Relaxed);
-            splash(format!("CLIP SAVED ({}s)", secs), sound);
+            clipped_splash(sound);
         }
 
         // ==========================================
@@ -541,12 +563,39 @@ unsafe fn run_overlay_inner(shared: Arc<AppShared>) {
                 }
             }
 
+            let show_logo = SPLASH_SHOW_LOGO.load(Ordering::Relaxed);
+            if show_logo {
+                let raw_rgba = badge_img.as_raw();
+                for y in 0..SPLASH_LOGO_SIZE {
+                    for x in 0..SPLASH_LOGO_SIZE {
+                        let src_x = x * BADGE_LOGO_SIZE as usize / SPLASH_LOGO_SIZE;
+                        let src_y = y * BADGE_LOGO_SIZE as usize / SPLASH_LOGO_SIZE;
+                        let src = (src_y * BADGE_LOGO_SIZE as usize + src_x) * 4;
+                        let idx = (y + SPLASH_LOGO_Y) * SPLASH_STRIDE + (x + SPLASH_LOGO_X) * 4;
+                        let alpha = raw_rgba[src + 3] as u32;
+                        let inverse = 255 - alpha;
+                        let src_b = raw_rgba[src + 2] as u32 * alpha / 255;
+                        let src_g = raw_rgba[src + 1] as u32 * alpha / 255;
+                        let src_r = raw_rgba[src] as u32 * alpha / 255;
+                        let dst_alpha = slice[idx + 3] as u32;
+                        slice[idx] = (src_b + slice[idx] as u32 * inverse / 255) as u8;
+                        slice[idx + 1] = (src_g + slice[idx + 1] as u32 * inverse / 255) as u8;
+                        slice[idx + 2] = (src_r + slice[idx + 2] as u32 * inverse / 255) as u8;
+                        slice[idx + 3] = (alpha + dst_alpha * inverse / 255) as u8;
+                    }
+                }
+            }
+
             SetBkMode(splash_dc, TRANSPARENT);
             let old_font = SelectObject(splash_dc, font_splash.into());
             SetTextColor(splash_dc, COLORREF(0x00f9f5f1)); // TEXT_PRIMARY BGR
 
             let mut text_rect = RECT {
-                left: 10,
+                left: if show_logo {
+                    (SPLASH_LOGO_X + SPLASH_LOGO_SIZE + 8) as i32
+                } else {
+                    10
+                },
                 top: 0,
                 right: SPLASH_WIDTH as i32 - 10,
                 bottom: SPLASH_HEIGHT as i32,

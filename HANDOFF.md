@@ -17,7 +17,7 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
 - **System Tray Integration (`src/tray.rs`)**:
   - Dedicated Win32 message loop on a background thread.
   - Custom embedded PNG icon from `assets/icon.png`.
-  - Context menu: "Save Replay Clip", "Toggle Recording", and "Quit Cliffy". Left-click or Alt+Shift+S opens settings.
+  - Context menu: "Save Replay Clip  Alt+R", "Toggle Recording  F10", "Toggle Buffering  F11", and "Quit Cliffy". Left-click or Alt+Shift+S opens settings.
   - Left-click toggles the settings window; Alt+Shift+S opens/focuses it.
   - Click outside cleanly dismisses the context menu using a top-level hidden tool window (`WS_EX_TOOLWINDOW` / `WS_POPUP`) with `PostMessageW(Some(hwnd), WM_NULL, ...)`.
   - Clean `NIM_DELETE` and thread joining on drop/exit prevents ghost taskbar icons.
@@ -38,10 +38,10 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
   - `open()` automatically creates the directory if missing.
   - `reveal()` uses `CommandExt::raw_arg(format!("/select,\"{}\"", path.display()))` to guarantee Windows Explorer highlights the saved clip.
   - Output paths are trimmed of whitespace and outer quotation marks.
-- **Small Pixelated Toast Notification (`src/toast.rs`)**:
-  - Rendered via layered Win32 window with GDI `NONANTIALIASED_QUALITY` and `"Small Fonts"`.
-  - Compact -26/-18 font sizing gives a crisp, authentic retro pixelated aesthetic without blurry ClearType halos.
-  - Recording badge shows a shrunken logo plus a live REC timer.
+- **Toast Notifications (`src/toast.rs`)**:
+  - Rendered via layered Win32 windows with GDI `NONANTIALIASED_QUALITY`.
+  - Clip-saved toast shows the Cliffy logo and `CLIPPED`; other action toasts keep their status text.
+  - Recording badge shows the logo and live REC timer on a square translucent background.
   - Message pump included in the toast thread to process Win32 events cleanly.
 - **Live settings**: UI edits auto-apply after a short debounce; `Apply Changes` applies them immediately. Settings are session-only; Cliffy does not read or write a config file. Global Alt+Shift+S restores and focuses the settings window; tray left-click toggles its visibility.
 - **Replay Ring & MP4 Muxer (`src/ring.rs`, `src/muxer.rs`)**:
@@ -65,8 +65,8 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
 | `src/hotkeys.rs` | `RegisterHotKey` thread and default shortcuts (Alt+R Save, F10 Record, F11 Buffer, Alt+Shift+S Show Settings). |
 | `src/muxer.rs` | MP4 writing of already-encoded H.264 packets, SPS/PPS split, Annex-B/AVCC helpers, finalization. |
 | `src/ring.rs` | Encoded-packet `VecDeque`, GOP-aware trim, RAM cap, keyframe-aligned replay snapshot. |
-| `src/toast.rs` | Layered Win32 toast window, click-through/topmost/no-activate, GDI non-antialiased Small Fonts rendering, recording badge with shrunken logo plus live REC timer, 4 s auto-hide, message pump. |
-| `src/tray.rs` | Dedicated Win32 thread, taskbar notification icon, context menu (Save Replay Clip, Toggle Recording, Quit), and left-click restore signaling. |
+| `src/toast.rs` | Layered Win32 toast windows, clip-saved logo and CLIPPED label, recording badge with live REC timer on a translucent square, 2.4 s auto-hide, message pump. |
+| `src/tray.rs` | Dedicated Win32 thread, taskbar notification icon, context menu with Alt+R, F10, and F11 shortcuts, and left-click settings toggle. |
 | `src/types.rs` | `Packet`, `CodecInfo`, `VideoSettings`, `ClipInfo`, `UiSnapshot`, `Command`, `SessionState`. |
 | `src/ui.rs` | Compact eframe/egui settings UI: Record/Buffer buttons with buffer-fill timer, Resolution (480p/720p/1080p/Custom), Clip Length, Delayed Stop, and Frame Rate fields, three startup toggles, Open Folder, debounced in-session apply, and an `Apply Changes` button. No scroll bar, config editor, or shortcut labels. |
 
@@ -76,8 +76,8 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
 
 1. **Build and unit tests**:
    `cargo test --offline` passes all four tests. `cargo build --offline` and the release build succeed; existing dead-code warnings remain.
-2. **Hardware encoder capture**:
-   Ran the 8-second headless capture selftest on this PC once with NVIDIA-first selection and once with Intel Quick Sync selected. Both returned `SELFTEST_OK` and saved an MP4. The NVIDIA clip was about 5.6 MB; the Intel clip was about 4.2 MB. Logs confirmed the selected adapters were the RTX 3050 Laptop GPU and Intel Iris Xe Graphics. These runs also verified capture continues past the three-texture pool without exhausting it.
+2. **Hardware encoder capture and fallback**:
+   Ran the 8-second headless capture selftest with NVIDIA-first selection, with Intel Quick Sync selected directly, and with NVIDIA disabled to exercise automatic fallback. All three returned `SELFTEST_OK` and saved an MP4. Logs confirmed the RTX 3050 Laptop GPU and Intel Iris Xe Graphics were selected as expected. These runs also verified capture continues past the three-texture pool without exhausting it.
 3. **RAM Footprint**:
    Working set reduced from 300+ MB to ~29 MB under idle/buffering.
 4. **Power Detection**:

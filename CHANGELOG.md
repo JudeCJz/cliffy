@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 - 2026-11-25
+
+- Automatically fall back from NVIDIA NVENC to Intel Quick Sync when NVIDIA encoder setup fails; verified the complete fallback path on this PC.
+- Return completed and unused GPU texture slots to the capture pool so buffering continues while async encoders are busy.
+- Show Alt+R, F10, and F11 beside the replay, recording, and buffering actions in the tray menu.
+- Show "Start Buffering" when buffering is off.
+- Add a simple translucent square background behind the top-right recording logo and timer.
+- Replace the clip-saved seconds toast with the Cliffy logo and "CLIPPED".
+
 ## 2026-11-25
 
 - Added the compact dark settings window based on the supplied HTML design.

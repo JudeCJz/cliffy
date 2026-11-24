@@ -325,7 +325,7 @@ impl App {
                     format_duration(target_seconds)
                 )
             } else {
-                "Stop Buffering".to_owned()
+                "Start Buffering".to_owned()
             };
             let buffer_fill = if buffering { blink } else { BG_ELEVATED };
             let buffer_stroke = if buffering { blink } else { BORDER_SUBTLE };

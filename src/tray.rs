@@ -96,10 +96,11 @@ unsafe extern "system" fn tray_wndproc(
                 let _ = GetCursorPos(&mut pt);
                 let _ = SetForegroundWindow(hwnd);
                 if let Ok(hmenu) = CreatePopupMenu() {
-                    let _ = AppendMenuW(hmenu, MF_STRING, 1, w!("Save Replay Clip"));
-                    let _ = AppendMenuW(hmenu, MF_STRING, 2, w!("Toggle Recording"));
+                    let _ = AppendMenuW(hmenu, MF_STRING, 1, w!("Save Replay Clip\tAlt+R"));
+                    let _ = AppendMenuW(hmenu, MF_STRING, 2, w!("Toggle Recording\tF10"));
+                    let _ = AppendMenuW(hmenu, MF_STRING, 3, w!("Toggle Buffering\tF11"));
                     let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
-                    let _ = AppendMenuW(hmenu, MF_STRING, 3, w!("Quit Cliffy"));
+                    let _ = AppendMenuW(hmenu, MF_STRING, 4, w!("Quit Cliffy"));
 
                     let choice = TrackPopupMenu(
                         hmenu,
@@ -125,6 +126,20 @@ unsafe extern "system" fn tray_wndproc(
                                     let _ = state.cmd.send(Command::ToggleRecording);
                                 }
                                 3 => {
+                                    let buffering = state
+                                        .shared
+                                        .ui
+                                        .lock()
+                                        .map(|ui| ui.buffering_active)
+                                        .unwrap_or(false);
+                                    let command = if buffering {
+                                        Command::StopSession
+                                    } else {
+                                        Command::StartSession
+                                    };
+                                    let _ = state.cmd.send(command);
+                                }
+                                4 => {
                                     state.shared.quit_requested.store(true, Ordering::Relaxed);
                                     if let Ok(ctx) = state.shared.ctx.lock() {
                                         if let Some(ctx) = ctx.as_ref() {
