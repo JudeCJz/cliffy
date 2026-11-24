@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 - 2026-11-25
+
+- Removed popup toast notifications. A saved clip now briefly replaces the top-right badge label with "CLIPPED" for one second, then restores the REC timer if recording continues.
+- Set the badge background to half its previous opacity, rounded its corners, and extended it behind the logo.
+
 ## 0.1.1 - 2026-11-25
 
 - Automatically fall back from NVIDIA NVENC to Intel Quick Sync when NVIDIA encoder setup fails; verified the complete fallback path on this PC.

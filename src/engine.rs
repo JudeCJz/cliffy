@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -32,8 +32,7 @@ pub struct AppShared {
     pub show_requested: AtomicBool,
     pub hide_requested: AtomicBool,
     pub quit_requested: AtomicBool,
-    pub toast_generation: AtomicU64,
-    pub toast_seconds: AtomicU32,
+    pub clip_saved_generation: AtomicU64,
     pub toast_sound: AtomicBool,
     pub toast_stop: AtomicBool,
 }
@@ -46,8 +45,7 @@ impl AppShared {
             show_requested: AtomicBool::new(false),
             hide_requested: AtomicBool::new(false),
             quit_requested: AtomicBool::new(false),
-            toast_generation: AtomicU64::new(0),
-            toast_seconds: AtomicU32::new(0),
+            clip_saved_generation: AtomicU64::new(0),
             toast_sound: AtomicBool::new(false),
             toast_stop: AtomicBool::new(false),
         })
@@ -105,14 +103,12 @@ impl AppShared {
         self.repaint();
     }
 
-    /// Ask the toast thread to show a save notification.
-    pub fn request_toast(&self, seconds: u32) {
-        self.toast_seconds
-            .store(seconds.clamp(1, 600), Ordering::Relaxed);
+    /// Ask the badge overlay to briefly confirm a saved clip.
+    pub fn request_clip_saved_badge(&self) {
         // A successful clip save should use the configured clip sound even
         // when it came from the tray or the on-screen record controls.
         self.toast_sound.store(true, Ordering::Release);
-        let _ = self.toast_generation.fetch_add(1, Ordering::Release);
+        let _ = self.clip_saved_generation.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -637,7 +633,7 @@ impl Engine {
                                     .set_message(format!("Recording saved: {}", p.display()));
                                 self.shared.ui.lock().unwrap().last_saved = Some(p);
                                 if show {
-                                    self.shared.request_toast(elapsed);
+                                    self.shared.request_clip_saved_badge();
                                 }
                             }
                             Ok(_) => self.shared.set_error("Recording file is empty"),
@@ -797,7 +793,7 @@ impl Engine {
                 drop(ui);
                 shared.repaint();
                 if show_toast && succeeded {
-                    shared.request_toast(seconds);
+                    shared.request_clip_saved_badge();
                 }
             })
         {

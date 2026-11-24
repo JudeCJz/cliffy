@@ -3,7 +3,7 @@
 Date: 2026-11-24
 Project: `D:\VS\PROJECTS\FREE WORK\Cliffy`
 Purpose: Windows-native desktop/game clipper in Rust using Windows Graphics Capture, D3D11 GPU conversion, NVIDIA NVENC or Intel Quick Sync H.264 encode, an encoded-packet replay ring, and a simplified eframe/egui window based on `D:\Downloads\base ui.html`.
-State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, simplified in-session settings UI, system tray, minimize-to-tray, autostart with Windows, power-aware buffering on AC/battery, crisp pixelated toast with live REC timer, and sub-30 MB idle RAM footprint. NVIDIA is preferred when available; Intel Quick Sync is the fallback. No config file is used. Defaults are 1080p, 30 FPS, 20 seconds pre-roll plus 2 seconds delayed post-roll, `D:\Videos\Cliffy`, and clip sound on. Launching starts Cliffy in the system tray.
+State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, simplified in-session settings UI, system tray, minimize-to-tray, autostart with Windows, power-aware buffering on AC/battery, a top-right recording badge, and sub-30 MB idle RAM footprint. NVIDIA is preferred when available; Intel Quick Sync is the fallback. No config file is used. Defaults are 1080p, 30 FPS, 20 seconds pre-roll plus 2 seconds delayed post-roll, `D:\Videos\Cliffy`, and clip sound on. Launching starts Cliffy in the system tray.
 
 ---
 
@@ -38,11 +38,11 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
   - `open()` automatically creates the directory if missing.
   - `reveal()` uses `CommandExt::raw_arg(format!("/select,\"{}\"", path.display()))` to guarantee Windows Explorer highlights the saved clip.
   - Output paths are trimmed of whitespace and outer quotation marks.
-- **Toast Notifications (`src/toast.rs`)**:
-  - Rendered via layered Win32 windows with GDI `NONANTIALIASED_QUALITY`.
-  - Clip-saved toast shows the Cliffy logo and `CLIPPED`; other action toasts keep their status text.
-  - Recording badge shows the logo and live REC timer on a square translucent background.
-  - Message pump included in the toast thread to process Win32 events cleanly.
+- **Recording and Clip Badge (`src/toast.rs`)**:
+  - A layered Win32 badge shows the Cliffy logo and live REC timer while recording.
+  - A saved clip replaces the timer with `CLIPPED` for one second; the timer returns if recording continues.
+  - The background extends behind the logo, has rounded corners, and uses half its previous opacity.
+  - Action sounds and the badge message pump run on the overlay thread.
 - **Live settings**: UI edits auto-apply after a short debounce; `Apply Changes` applies them immediately. Settings are session-only; Cliffy does not read or write a config file. Global Alt+Shift+S restores and focuses the settings window; tray left-click toggles its visibility.
 - **Replay Ring & MP4 Muxer (`src/ring.rs`, `src/muxer.rs`)**:
   - Encoded-packet ring buffer with GOP-aware trimming. Replay saves include the configured pre-roll and delayed post-roll; filenames end in `_extraNsec.mp4`.
@@ -56,7 +56,7 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
 
 | File | Owns |
 | --- | --- |
-| `src/main.rs` | Entry point, CLI (`--autostart`, `--selftest`, `--out`, `--help`), power check on autostart, STA COM init, Media Foundation startup/shutdown, engine/hotkey/toast/tray startup, launch of the simplified eframe/egui window. |
+| `src/main.rs` | Entry point, CLI (`--autostart`, `--selftest`, `--out`, `--help`), power check on autostart, STA COM init, Media Foundation startup/shutdown, engine/hotkey/overlay/tray startup, launch of the simplified eframe/egui window. |
 | `src/capture.rs` | Windows Graphics Capture handler, cursor capture toggle, source resolution, frame pacing, GPU/encoder rebuild on size change, error retry, packet/config messages. |
 | `src/config.rs` | Runtime defaults, sanitization, presets, hotkeys, size estimates, `REPLAY_RAM_CAP_BYTES`, autostart registry management, `GetSystemPowerStatus` bindings. |
 | `src/encoder.rs` | NVIDIA NVENC and Intel Quick Sync hardware MFT discovery/init, adapter matching, async event pumping, D3D11 surface samples, output packet extraction, SPS/PPS recovery, codec API setup. |
@@ -65,7 +65,7 @@ State: v1 completed with hardware NVENC/Quick Sync zero-copy capture pipeline, s
 | `src/hotkeys.rs` | `RegisterHotKey` thread and default shortcuts (Alt+R Save, F10 Record, F11 Buffer, Alt+Shift+S Show Settings). |
 | `src/muxer.rs` | MP4 writing of already-encoded H.264 packets, SPS/PPS split, Annex-B/AVCC helpers, finalization. |
 | `src/ring.rs` | Encoded-packet `VecDeque`, GOP-aware trim, RAM cap, keyframe-aligned replay snapshot. |
-| `src/toast.rs` | Layered Win32 toast windows, clip-saved logo and CLIPPED label, recording badge with live REC timer on a translucent square, 2.4 s auto-hide, message pump. |
+| `src/toast.rs` | Layered Win32 recording badge, one-second CLIPPED confirmation, rounded translucent background, and action sound playback. |
 | `src/tray.rs` | Dedicated Win32 thread, taskbar notification icon, context menu with Alt+R, F10, and F11 shortcuts, and left-click settings toggle. |
 | `src/types.rs` | `Packet`, `CodecInfo`, `VideoSettings`, `ClipInfo`, `UiSnapshot`, `Command`, `SessionState`. |
 | `src/ui.rs` | Compact eframe/egui settings UI: Record/Buffer buttons with buffer-fill timer, Resolution (480p/720p/1080p/Custom), Clip Length, Delayed Stop, and Frame Rate fields, three startup toggles, Open Folder, debounced in-session apply, and an `Apply Changes` button. No scroll bar, config editor, or shortcut labels. |
